@@ -29,7 +29,8 @@ app.use(express.json());
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/users', require('./routes/users'));
 app.use('/api/meetings', require('./routes/meetings'));
-
+app.use('/api/documents', require('./routes/documents'));
+app.use('/uploads', require('express').static(require('path').join(__dirname, 'uploads')));
 app.get('/', (req, res) => {
     res.json({ message: 'Nexus Backend Running' });
 });
