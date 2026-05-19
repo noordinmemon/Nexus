@@ -1,272 +1,279 @@
-import React, { useState } from 'react';
-import { Search, Filter, DollarSign, TrendingUp, Users, Calendar } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { DollarSign, TrendingUp, ArrowDownCircle, ArrowUpCircle, ArrowRightCircle } from 'lucide-react';
 import { Card, CardHeader, CardBody } from '../../components/ui/Card';
-import { Input } from '../../components/ui/Input';
 import { Button } from '../../components/ui/Button';
 import { Badge } from '../../components/ui/Badge';
-import { Avatar } from '../../components/ui/Avatar';
-
-const deals = [
-  {
-    id: 1,
-    startup: {
-      name: 'TechWave AI',
-      logo: 'https://images.pexels.com/photos/774909/pexels-photo-774909.jpeg',
-      industry: 'FinTech'
-    },
-    amount: '$1.5M',
-    equity: '15%',
-    status: 'Due Diligence',
-    stage: 'Series A',
-    lastActivity: '2024-02-15'
-  },
-  {
-    id: 2,
-    startup: {
-      name: 'GreenLife Solutions',
-      logo: 'https://images.pexels.com/photos/614810/pexels-photo-614810.jpeg',
-      industry: 'CleanTech'
-    },
-    amount: '$2M',
-    equity: '20%',
-    status: 'Term Sheet',
-    stage: 'Seed',
-    lastActivity: '2024-02-10'
-  },
-  {
-    id: 3,
-    startup: {
-      name: 'HealthPulse',
-      logo: 'https://images.pexels.com/photos/415829/pexels-photo-415829.jpeg',
-      industry: 'HealthTech'
-    },
-    amount: '$800K',
-    equity: '12%',
-    status: 'Negotiation',
-    stage: 'Pre-seed',
-    lastActivity: '2024-02-05'
-  }
-];
+import { getTransactions, deposit, withdraw } from '../../api/transactions';
+import toast from 'react-hot-toast';
 
 export const DealsPage: React.FC = () => {
-  const [searchQuery, setSearchQuery] = useState('');
-  const [selectedStatus, setSelectedStatus] = useState<string[]>([]);
-  
-  const statuses = ['Due Diligence', 'Term Sheet', 'Negotiation', 'Closed', 'Passed'];
-  
-  const toggleStatus = (status: string) => {
-    setSelectedStatus(prev => 
-      prev.includes(status)
-        ? prev.filter(s => s !== status)
-        : [...prev, status]
-    );
-  };
-  
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'Due Diligence':
-        return 'primary';
-      case 'Term Sheet':
-        return 'secondary';
-      case 'Negotiation':
-        return 'accent';
-      case 'Closed':
-        return 'success';
-      case 'Passed':
-        return 'error';
-      default:
-        return 'gray';
+  const [transactions, setTransactions] = useState<any[]>([]);
+  const [balance, setBalance] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [amount, setAmount] = useState('');
+  const [description, setDescription] = useState('');
+  const [activeTab, setActiveTab] = useState<'deposit' | 'withdraw'>('deposit');
+  const [processing, setProcessing] = useState(false);
+
+  useEffect(() => {
+    fetchTransactions();
+  }, []);
+
+  const fetchTransactions = async () => {
+    try {
+      const data = await getTransactions();
+      setTransactions(data.transactions);
+      setBalance(data.balance);
+    } catch (error) {
+      toast.error('Failed to load transactions');
+    } finally {
+      setLoading(false);
     }
   };
-  
+
+  const handleTransaction = async () => {
+    if (!amount || Number(amount) <= 0) {
+      toast.error('Enter a valid amount');
+      return;
+    }
+
+    setProcessing(true);
+    try {
+      if (activeTab === 'deposit') {
+        await deposit(Number(amount), description || 'Deposit');
+        toast.success('Deposit successful');
+      } else {
+        await withdraw(Number(amount), description || 'Withdrawal');
+        toast.success('Withdrawal successful');
+      }
+      setAmount('');
+      setDescription('');
+      fetchTransactions();
+    } catch (error) {
+      toast.error((error as Error).message);
+    } finally {
+      setProcessing(false);
+    }
+  };
+
+  const getTypeIcon = (type: string) => {
+    switch (type) {
+      case 'deposit': return <ArrowDownCircle size={18} className="text-green-500" />;
+      case 'withdrawal': return <ArrowUpCircle size={18} className="text-red-500" />;
+      case 'transfer': return <ArrowRightCircle size={18} className="text-blue-500" />;
+      default: return null;
+    }
+  };
+
+  const getStatusVariant = (status: string) => {
+    switch (status) {
+      case 'completed': return 'primary';
+      case 'pending': return 'secondary';
+      case 'failed': return 'gray';
+      default: return 'gray';
+    }
+  };
+
   return (
     <div className="space-y-6 animate-fade-in">
-      <div className="flex justify-between items-center">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Investment Deals</h1>
-          <p className="text-gray-600">Track and manage your investment pipeline</p>
-        </div>
-        
-        <Button>
-          Add Deal
-        </Button>
+      <div>
+        <h1 className="text-2xl font-bold text-gray-900">Payment Center</h1>
+        <p className="text-gray-600">Manage your deposits, withdrawals and transfers</p>
       </div>
-      
+
       {/* Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <Card>
+          <CardBody>
+            <div className="flex items-center">
+              <div className="p-3 bg-green-100 rounded-lg mr-3">
+                <DollarSign size={20} className="text-green-600" />
+              </div>
+              <div>
+                <p className="text-sm text-gray-600">Current Balance</p>
+                <p className="text-xl font-bold text-gray-900">${balance.toLocaleString()}</p>
+              </div>
+            </div>
+          </CardBody>
+        </Card>
+
         <Card>
           <CardBody>
             <div className="flex items-center">
               <div className="p-3 bg-primary-100 rounded-lg mr-3">
-                <DollarSign size={20} className="text-primary-600" />
+                <TrendingUp size={20} className="text-primary-600" />
               </div>
               <div>
-                <p className="text-sm text-gray-600">Total Investment</p>
-                <p className="text-lg font-semibold text-gray-900">$4.3M</p>
+                <p className="text-sm text-gray-600">Total Transactions</p>
+                <p className="text-xl font-bold text-gray-900">{transactions.length}</p>
               </div>
             </div>
           </CardBody>
         </Card>
-        
+
         <Card>
           <CardBody>
             <div className="flex items-center">
-              <div className="p-3 bg-secondary-100 rounded-lg mr-3">
-                <TrendingUp size={20} className="text-secondary-600" />
+              <div className="p-3 bg-blue-100 rounded-lg mr-3">
+                <ArrowRightCircle size={20} className="text-blue-600" />
               </div>
               <div>
-                <p className="text-sm text-gray-600">Active Deals</p>
-                <p className="text-lg font-semibold text-gray-900">8</p>
-              </div>
-            </div>
-          </CardBody>
-        </Card>
-        
-        <Card>
-          <CardBody>
-            <div className="flex items-center">
-              <div className="p-3 bg-accent-100 rounded-lg mr-3">
-                <Users size={20} className="text-accent-600" />
-              </div>
-              <div>
-                <p className="text-sm text-gray-600">Portfolio Companies</p>
-                <p className="text-lg font-semibold text-gray-900">12</p>
-              </div>
-            </div>
-          </CardBody>
-        </Card>
-        
-        <Card>
-          <CardBody>
-            <div className="flex items-center">
-              <div className="p-3 bg-success-100 rounded-lg mr-3">
-                <Calendar size={20} className="text-success-600" />
-              </div>
-              <div>
-                <p className="text-sm text-gray-600">Closed This Month</p>
-                <p className="text-lg font-semibold text-gray-900">2</p>
+                <p className="text-sm text-gray-600">Total Deposits</p>
+                <p className="text-xl font-bold text-gray-900">
+                  ${transactions
+                    .filter(t => t.type === 'deposit' && t.status === 'completed')
+                    .reduce((sum, t) => sum + t.amount, 0)
+                    .toLocaleString()}
+                </p>
               </div>
             </div>
           </CardBody>
         </Card>
       </div>
-      
-      {/* Filters */}
-      <div className="flex flex-col md:flex-row gap-4">
-        <div className="w-full md:w-2/3">
-          <Input
-            placeholder="Search deals by startup name or industry..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            startAdornment={<Search size={18} />}
-            fullWidth
-          />
-        </div>
-        
-        <div className="w-full md:w-1/3">
-          <div className="flex items-center gap-2">
-            <Filter size={18} className="text-gray-500" />
-            <div className="flex flex-wrap gap-2">
-              {statuses.map(status => (
-                <Badge
-                  key={status}
-                  variant={selectedStatus.includes(status) ? getStatusColor(status) : 'gray'}
-                  className="cursor-pointer"
-                  onClick={() => toggleStatus(status)}
-                >
-                  {status}
-                </Badge>
-              ))}
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Transaction Form */}
+        <Card className="lg:col-span-1">
+          <CardHeader>
+            <h2 className="text-lg font-medium text-gray-900">New Transaction</h2>
+          </CardHeader>
+          <CardBody className="space-y-4">
+            {/* Tabs */}
+            <div className="flex border border-gray-200 rounded-lg overflow-hidden">
+              <button
+                onClick={() => setActiveTab('deposit')}
+                className={`flex-1 py-2 text-sm font-medium transition-colors ${activeTab === 'deposit'
+                  ? 'bg-primary-600 text-white'
+                  : 'text-gray-600 hover:bg-gray-50'
+                  }`}
+              >
+                Deposit
+              </button>
+              <button
+                onClick={() => setActiveTab('withdraw')}
+                className={`flex-1 py-2 text-sm font-medium transition-colors ${activeTab === 'withdraw'
+                  ? 'bg-primary-600 text-white'
+                  : 'text-gray-600 hover:bg-gray-50'
+                  }`}
+              >
+                Withdraw
+              </button>
             </div>
-          </div>
-        </div>
-      </div>
-      
-      {/* Deals table */}
-      <Card>
-        <CardHeader>
-          <h2 className="text-lg font-medium text-gray-900">Active Deals</h2>
-        </CardHeader>
-        <CardBody>
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead>
-                <tr className="border-b border-gray-200">
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Startup
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Amount
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Equity
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Status
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Stage
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Last Activity
-                  </th>
-                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Actions
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-200">
-                {deals.map(deal => (
-                  <tr key={deal.id} className="hover:bg-gray-50">
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="flex items-center">
-                        <Avatar
-                          src={deal.startup.logo}
-                          alt={deal.startup.name}
-                          size="sm"
-                          className="flex-shrink-0"
-                        />
-                        <div className="ml-4">
-                          <div className="text-sm font-medium text-gray-900">
-                            {deal.startup.name}
+
+            {/* Amount */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Amount (USD)
+              </label>
+              <input
+                type="number"
+                value={amount}
+                onChange={(e) => setAmount(e.target.value)}
+                placeholder="Enter amount"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+              />
+            </div>
+
+            {/* Description */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Description (optional)
+              </label>
+              <input
+                type="text"
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                placeholder="Enter description"
+                className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+              />
+            </div>
+
+            {/* Balance info */}
+            <div className="p-3 bg-gray-50 rounded-md">
+              <p className="text-sm text-gray-600">Available Balance</p>
+              <p className="text-lg font-semibold text-gray-900">${balance.toLocaleString()}</p>
+            </div>
+
+            <Button
+              className="w-full"
+              onClick={handleTransaction}
+              isLoading={processing}
+            >
+              {activeTab === 'deposit' ? 'Deposit Funds' : 'Withdraw Funds'}
+            </Button>
+          </CardBody>
+        </Card>
+
+        {/* Transaction History */}
+        <div className="lg:col-span-2">
+          <Card>
+            <CardHeader>
+              <h2 className="text-lg font-medium text-gray-900">
+                Transaction History ({transactions.length})
+              </h2>
+            </CardHeader>
+            <CardBody>
+              {loading ? (
+                <p className="text-center text-gray-500 py-8">Loading...</p>
+              ) : transactions.length === 0 ? (
+                <div className="text-center py-12">
+                  <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-gray-100 mb-4">
+                    <DollarSign size={24} className="text-gray-500" />
+                  </div>
+                  <p className="text-gray-600">No transactions yet</p>
+                  <p className="text-sm text-gray-500 mt-1">Make your first deposit to get started</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {transactions.map(transaction => (
+                    <div key={transaction._id} className="flex items-center p-4 border border-gray-200 rounded-lg hover:bg-gray-50">
+                      <div className="mr-3">
+                        {getTypeIcon(transaction.type)}
+                      </div>
+                      <div className="flex-1">
+                        <div className="flex justify-between items-start">
+                          <div>
+                            <p className="text-sm font-medium text-gray-900 capitalize">
+                              {transaction.type}
+                            </p>
+                            <p className="text-xs text-gray-500 mt-0.5">
+                              {transaction.description}
+                            </p>
+                            <p className="text-xs text-gray-400 mt-0.5">
+                              {transaction.transactionId}
+                            </p>
                           </div>
-                          <div className="text-sm text-gray-500">
-                            {deal.startup.industry}
+                          <div className="text-right">
+                            <p className={`text-sm font-semibold ${transaction.type === 'deposit'
+                              ? 'text-green-600'
+                              : 'text-red-600'
+                              }`}>
+                              {transaction.type === 'deposit' ? '+' : '-'}${transaction.amount.toLocaleString()}
+                            </p>
+                            <p className="text-xs text-gray-500 mt-0.5">
+                              {new Date(transaction.createdAt).toLocaleDateString()}
+                            </p>
                           </div>
                         </div>
+                        <div className="mt-2 flex items-center justify-between">
+                          <Badge variant={getStatusVariant(transaction.status)} size="sm">
+                            {transaction.status}
+                          </Badge>
+                          {transaction.recipient && (
+                            <p className="text-xs text-gray-500">
+                              To: {transaction.recipient.name}
+                            </p>
+                          )}
+                        </div>
                       </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm text-gray-900">{deal.amount}</div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm text-gray-900">{deal.equity}</div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <Badge variant={getStatusColor(deal.status)}>
-                        {deal.status}
-                      </Badge>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm text-gray-900">{deal.stage}</div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm text-gray-500">
-                        {new Date(deal.lastActivity).toLocaleDateString()}
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                      <Button variant="outline" size="sm">
-                        View Details
-                      </Button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </CardBody>
-      </Card>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardBody>
+          </Card>
+        </div>
+      </div>
     </div>
   );
 };
