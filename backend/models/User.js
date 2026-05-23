@@ -50,7 +50,16 @@ const userSchema = new mongoose.Schema({
     fundingNeeded: {
         type: String,
         default: ''
+    },
+    otp: {
+        type: String,
+        default: undefined
+    },
+    otpExpiry: {
+        type: Date,
+        default: undefined
     }
-}, { timestamps: true });
+},
+    { timestamps: true });
 
 module.exports = mongoose.model('User', userSchema);

@@ -7,72 +7,129 @@ const cors = require('cors');
 const dotenv = require('dotenv');
 const http = require('http');
 const { Server } = require('socket.io');
+const helmet = require('helmet');
+const rateLimit = require('express-rate-limit');
+const path = require('path');
 const connectDB = require('./config/db');
 
+// Initialize configuration
 dotenv.config();
 connectDB();
 
 const app = express();
 const server = http.createServer(app);
 
-const io = new Server(server, {
-    cors: {
-        origin: 'http://localhost:5173',
-        methods: ['GET', 'POST']
+// Global Middleware Array Configuration
+app.use(cors({
+    origin: process.env.CLIENT_URL || 'http://localhost:5173',
+    credentials: true
+}));
+
+app.use(helmet());
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+
+// Native Mongo Sanitizer Middleware (Replaces express-mongo-sanitize)
+const sanitizeData = (obj) => {
+    if (obj instanceof Object) {
+        for (const key in obj) {
+            if (key.startsWith('$')) { // Target operators like $gt, $gte, etc.
+                delete obj[key];
+            } else if (obj[key] instanceof Object) {
+                sanitizeData(obj[key]); // Recursively sanitize nested objects
+            }
+        }
     }
+    return obj;
+};
+
+const customMongoSanitize = (req, res, next) => {
+    if (req.body) sanitizeData(req.body);
+    if (req.params) sanitizeData(req.params);
+    // Safely check query property to prevent getter errors
+    const hasQueryDescriptor = Object.getOwnPropertyDescriptor(req, 'query');
+    if (req.query && (!hasQueryDescriptor || hasQueryDescriptor.writable || hasQueryDescriptor.set)) {
+        sanitizeData(req.query);
+    }
+    next();
+};
+
+// Security Rate Limiting 
+const limiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutes 
+    max: 100,
+    message: { message: 'Too many requests, please try again later' }
 });
 
-app.use(cors());
-app.use(express.json());
+const authLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 10,
+    message: { message: 'Too many login attempts, please try again later' }
+});
 
-// Routes
+// Apply Custom Sanitizer and Rate Limiters explicitly to API routes
+app.use('/api', customMongoSanitize);
+app.use('/api', limiter);
+app.use('/api/auth/login', authLimiter);
+app.use('/api/auth/register', authLimiter);
+
+// Routes 
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/users', require('./routes/users'));
 app.use('/api/meetings', require('./routes/meetings'));
 app.use('/api/documents', require('./routes/documents'));
-app.use('/uploads', require('express').static(require('path').join(__dirname, 'uploads')));
 app.use('/api/transactions', require('./routes/transactions'));
+
 app.get('/', (req, res) => {
     res.json({ message: 'Nexus Backend Running' });
 });
 
-// Socket.IO — Video Call Signaling
+// Socket.IO Setup with explicit routing targets
+const io = new Server(server, {
+    cors: {
+        origin: process.env.CLIENT_URL || 'http://localhost:5173',
+        methods: ['GET', 'POST']
+    }
+});
+
 const rooms = {};
 
 io.on('connection', (socket) => {
     console.log('User connected:', socket.id);
 
-    // Join a room
     socket.on('join-room', (roomId, userId) => {
         socket.join(roomId);
 
         if (!rooms[roomId]) {
             rooms[roomId] = [];
         }
+
         rooms[roomId].push({ socketId: socket.id, userId });
-
-        // Tell others in room that someone joined
-        socket.to(roomId).emit('user-joined', socket.id, userId);
-
-        console.log(`User ${userId} joined room ${roomId}`);
+        socket.to(roomId).emit('user-joined', { socketId: socket.id, userId });
     });
 
-    // Handle WebRTC offer
-    socket.on('offer', (offer, roomId) => {
-        socket.to(roomId).emit('offer', offer, socket.id);
+    socket.on('offer', (payload) => {
+        io.to(payload.targetSocketId).emit('offer', {
+            offer: payload.offer,
+            senderSocketId: socket.id
+        });
     });
 
-    // Handle WebRTC answer
-    socket.on('answer', (answer, socketId) => {
-        io.to(socketId).emit('answer', answer);
+    socket.on('answer', (payload) => {
+        io.to(payload.targetSocketId).emit('answer', {
+            answer: payload.answer,
+            senderSocketId: socket.id
+        });
     });
 
-    // Handle ICE candidates
-    socket.on('ice-candidate', (candidate, roomId) => {
-        socket.to(roomId).emit('ice-candidate', candidate);
+    socket.on('ice-candidate', (payload) => {
+        io.to(payload.targetSocketId).emit('ice-candidate', {
+            candidate: payload.candidate,
+            senderSocketId: socket.id
+        });
     });
 
-    // Toggle audio/video
     socket.on('toggle-audio', (roomId, enabled) => {
         socket.to(roomId).emit('user-toggle-audio', socket.id, enabled);
     });
@@ -81,30 +138,32 @@ io.on('connection', (socket) => {
         socket.to(roomId).emit('user-toggle-video', socket.id, enabled);
     });
 
-    // Leave room
     socket.on('leave-room', (roomId) => {
-        socket.to(roomId).emit('user-left', socket.id);
-        socket.leave(roomId);
-
-        if (rooms[roomId]) {
-            rooms[roomId] = rooms[roomId].filter(u => u.socketId !== socket.id);
-        }
+        handleDisconnectCleanup(socket, roomId);
     });
 
-    // Disconnect
     socket.on('disconnect', () => {
-        console.log('User disconnected:', socket.id);
         Object.keys(rooms).forEach(roomId => {
-            if (rooms[roomId]) {
-                const wasInRoom = rooms[roomId].some(u => u.socketId === socket.id);
-                if (wasInRoom) {
-                    socket.to(roomId).emit('user-left', socket.id);
-                    rooms[roomId] = rooms[roomId].filter(u => u.socketId !== socket.id);
-                }
-            }
+            handleDisconnectCleanup(socket, roomId);
         });
+        console.log('User disconnected:', socket.id);
     });
 });
+
+function handleDisconnectCleanup(socket, roomId) {
+    if (rooms[roomId]) {
+        const wasInRoom = rooms[roomId].some(u => u.socketId === socket.id);
+        if (wasInRoom) {
+            socket.to(roomId).emit('user-left', socket.id);
+            rooms[roomId] = rooms[roomId].filter(u => u.socketId !== socket.id);
+
+            if (rooms[roomId].length === 0) {
+                delete rooms[roomId];
+            }
+        }
+        socket.leave(roomId);
+    }
+}
 
 const PORT = process.env.PORT || 5000;
 server.listen(PORT, () => {
