@@ -4,7 +4,7 @@ import { io, Socket } from 'socket.io-client';
 import { Mic, MicOff, Video, VideoOff, PhoneOff } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 
-const SOCKET_URL = 'http://localhost:5000';
+const SOCKET_URL = 'https://nexus-4-vhn1.onrender.com';
 
 export const VideoCallPage: React.FC = () => {
   const { roomId } = useParams<{ roomId: string }>();
